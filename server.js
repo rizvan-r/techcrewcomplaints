@@ -11,7 +11,14 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+// Serve static assets
 app.use(express.static(__dirname));
+
+// Explicit Root Route
+app.get('/', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
 
 // Ensure data directory exists
 const DATA_DIR = path.join(__dirname, 'data');
@@ -39,7 +46,6 @@ function getComplaints() {
     const raw = fs.readFileSync(COMPLAINTS_FILE, 'utf8');
     return JSON.parse(raw);
   } catch (err) {
-    console.error("Error reading complaints file:", err);
     return [];
   }
 }
@@ -47,9 +53,7 @@ function getComplaints() {
 function saveComplaints(complaints) {
   try {
     fs.writeFileSync(COMPLAINTS_FILE, JSON.stringify(complaints, null, 2));
-  } catch (err) {
-    console.error("Error writing complaints file:", err);
-  }
+  } catch (err) {}
 }
 
 function getConfig() {
@@ -62,15 +66,20 @@ function getConfig() {
 }
 
 function saveConfig(config) {
-  fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(config, null, 2));
+  } catch (err) {}
 }
+
+const DEFAULT_SHEET_URL = "https://script.google.com/macros/s/AKfycbyLdeZFlOhwE8YYZHmDFet6xOIQxDaPlclYydLhbyAE_VJ60pSJhyx6kCsyoY31ruuwJA/exec";
 
 // Forward complaint payload to Google Sheets Web App
 async function forwardToGoogleSheets(complaint, webAppUrl) {
-  if (!webAppUrl) return { success: false, reason: "No WebApp URL configured" };
+  const targetUrl = webAppUrl || process.env.GOOGLE_SHEET_WEBAPP_URL || DEFAULT_SHEET_URL;
+  if (!targetUrl) return { success: false, reason: "No WebApp URL configured" };
   
   try {
-    const response = await fetch(webAppUrl, {
+    const response = await fetch(targetUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(complaint),
@@ -87,27 +96,26 @@ async function forwardToGoogleSheets(complaint, webAppUrl) {
     
     return { success: true, data: jsonResult };
   } catch (err) {
-    console.error("Failed to forward to Google Sheets:", err.message);
     return { success: false, error: err.message };
   }
 }
 
 // API Routes
 
-// 1. Get complaints - ALWAYS fetches live from Google Sheets if configured
+// 1. Get complaints - ALWAYS fetches live from Google Sheets
 app.get('/api/complaints', async (req, res) => {
   const config = getConfig();
+  const targetUrl = config.googleSheetWebAppUrl || process.env.GOOGLE_SHEET_WEBAPP_URL || DEFAULT_SHEET_URL;
 
-  if (config.googleSheetWebAppUrl) {
+  if (targetUrl) {
     try {
-      const response = await fetch(config.googleSheetWebAppUrl, { 
+      const response = await fetch(targetUrl, { 
         method: "GET", 
         redirect: "follow" 
       });
       
       const data = await response.json();
       if (data && data.complaints && Array.isArray(data.complaints)) {
-        // Sync local cache with Google Sheet
         saveComplaints(data.complaints);
         return res.json({
           source: "google_sheet",
@@ -131,7 +139,7 @@ app.get('/api/complaints', async (req, res) => {
 // 2. Submit a new complaint
 app.post('/api/complaints', async (req, res) => {
   try {
-    const { title, description } = req.body;
+    const { title, description } = req.body || {};
 
     if (!title || !description) {
       return res.status(400).json({ error: "Title and Description are required." });
@@ -145,14 +153,11 @@ app.post('/api/complaints', async (req, res) => {
       description: description.trim()
     };
 
-    // Forward to Google Sheet Web App if configured
     const config = getConfig();
-    let sheetSyncResult = null;
-    if (config.googleSheetWebAppUrl) {
-      sheetSyncResult = await forwardToGoogleSheets(newComplaint, config.googleSheetWebAppUrl);
-    }
+    const targetUrl = config.googleSheetWebAppUrl || process.env.GOOGLE_SHEET_WEBAPP_URL || DEFAULT_SHEET_URL;
+    
+    const sheetSyncResult = await forwardToGoogleSheets(newComplaint, targetUrl);
 
-    // Save to local cache
     const complaints = getComplaints();
     complaints.unshift(newComplaint);
     saveComplaints(complaints);
@@ -165,38 +170,23 @@ app.post('/api/complaints', async (req, res) => {
       sheetDetails: sheetSyncResult
     });
   } catch (err) {
-    console.error("Error submitting complaint:", err);
     res.status(500).json({ error: "Internal server error while saving complaint." });
   }
 });
 
-// 3. Get Configuration
-app.get('/api/config', (req, res) => {
-  const config = getConfig();
-  res.json({
-    googleSheetConnected: Boolean(config.googleSheetWebAppUrl),
-    googleSheetWebAppUrl: config.googleSheetWebAppUrl ? config.googleSheetWebAppUrl : ""
+// Fallback for any non-API routes -> serve index.html
+app.get('*', (req, res) => {
+  res.sendFile(path.join(__dirname, 'index.html'));
+});
+
+// Only listen locally
+if (require.main === module) {
+  app.listen(PORT, () => {
+    console.log(`=======================================================`);
+    console.log(` 🛠️ Tech Crew Complaint Portal is running at:`);
+    console.log(` 🌐 http://localhost:${PORT}`);
+    console.log(`=======================================================`);
   });
-});
+}
 
-// 4. Update Google Sheet Web App URL
-app.post('/api/config', (req, res) => {
-  const { googleSheetWebAppUrl } = req.body;
-  const config = getConfig();
-  config.googleSheetWebAppUrl = (googleSheetWebAppUrl || "").trim();
-  saveConfig(config);
-
-  res.json({
-    success: true,
-    message: "Google Sheets Web App URL saved!",
-    googleSheetConnected: Boolean(config.googleSheetWebAppUrl)
-  });
-});
-
-// Start Server
-app.listen(PORT, () => {
-  console.log(`=======================================================`);
-  console.log(` 🛠️ Tech Crew Complaint Portal is running at:`);
-  console.log(` 🌐 http://localhost:${PORT}`);
-  console.log(`=======================================================`);
-});
+module.exports = app;
