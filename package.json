@@ -1,0 +1,24 @@
+{
+  "name": "college-complaint-portal",
+  "version": "1.0.0",
+  "description": "College Grievance & Complaint Management Portal with Stitch UI and Google Sheets integration",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2"
+  },
+  "keywords": [
+    "college",
+    "complaint-management",
+    "google-sheets",
+    "stitch-ui"
+  ],
+  "author": "",
+  "license": "ISC"
+}
