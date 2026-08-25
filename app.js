@@ -1,13 +1,13 @@
 /**
  * Tech Crew - Complaint Management Portal
- * Frontend Logic (Title & Description)
+ * Frontend Logic (Mobile & Desktop Responsive)
  */
 
 // Application State
 const state = {
   complaints: [],
   searchQuery: '',
-  theme: localStorage.getItem('techcrew_theme') || 'light'
+  theme: localStorage.getItem('techcrew_theme') || (window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
 };
 
 // DOM Elements
@@ -20,6 +20,7 @@ const elements = {
   refreshFeedBtn: document.getElementById('refreshFeedBtn'),
   themeToggleBtn: document.getElementById('themeToggleBtn'),
   themeIcon: document.getElementById('themeIcon'),
+  themeColorMeta: document.getElementById('themeColorMeta'),
   toastContainer: document.getElementById('toastContainer')
 };
 
@@ -34,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
 function initTheme() {
   document.documentElement.setAttribute('data-theme', state.theme);
   updateThemeIcon();
+  updateThemeColorMeta();
 }
 
 function toggleTheme() {
@@ -41,11 +43,18 @@ function toggleTheme() {
   localStorage.setItem('techcrew_theme', state.theme);
   document.documentElement.setAttribute('data-theme', state.theme);
   updateThemeIcon();
+  updateThemeColorMeta();
 }
 
 function updateThemeIcon() {
   if (elements.themeIcon) {
     elements.themeIcon.textContent = state.theme === 'dark' ? 'light_mode' : 'dark_mode';
+  }
+}
+
+function updateThemeColorMeta() {
+  if (elements.themeColorMeta) {
+    elements.themeColorMeta.setAttribute('content', state.theme === 'dark' ? '#0b111a' : '#002045');
   }
 }
 
@@ -60,22 +69,32 @@ function bindEvents() {
   elements.searchInput?.addEventListener('input', (e) => {
     state.searchQuery = e.target.value.trim().toLowerCase();
     if (elements.clearSearchBtn) {
-      elements.clearSearchBtn.style.display = state.searchQuery ? 'block' : 'none';
+      elements.clearSearchBtn.style.display = state.searchQuery ? 'inline-flex' : 'none';
     }
     renderComplaints();
   });
 
   elements.clearSearchBtn?.addEventListener('click', () => {
-    elements.searchInput.value = '';
+    if (elements.searchInput) {
+      elements.searchInput.value = '';
+      elements.searchInput.focus();
+    }
     state.searchQuery = '';
     elements.clearSearchBtn.style.display = 'none';
     renderComplaints();
   });
 
   // Refresh Feed
-  elements.refreshFeedBtn?.addEventListener('click', () => {
-    loadData(true);
+  elements.refreshFeedBtn?.addEventListener('click', async () => {
+    const icon = elements.refreshFeedBtn.querySelector('.material-symbols-outlined');
+    if (icon) icon.style.transform = 'rotate(180deg)';
+    
+    await loadData(true);
     showToast('Complaints refreshed', 'info');
+    
+    setTimeout(() => {
+      if (icon) icon.style.transform = 'none';
+    }, 300);
   });
 }
 
@@ -100,10 +119,15 @@ async function handleComplaintSubmit(e) {
   e.preventDefault();
 
   const formData = new FormData(elements.complaintForm);
-  const payload = {
-    title: formData.get('title'),
-    description: formData.get('description')
-  };
+  const title = (formData.get('title') || '').trim();
+  const description = (formData.get('description') || '').trim();
+
+  if (!title || !description) {
+    showToast('Please fill in both title and description.', 'error');
+    return;
+  }
+
+  const payload = { title, description };
 
   // UI Loading State
   const submitBtn = elements.submitBtn;
@@ -158,9 +182,9 @@ function renderComplaints() {
   if (filtered.length === 0) {
     elements.complaintsList.innerHTML = `
       <div class="empty-state">
-        <span class="material-symbols-outlined">inbox</span>
-        <h4 style="font-size: 15px; font-weight: 600; margin-bottom: 4px;">No Complaints Yet</h4>
-        <p style="font-size: 13px;">Submitted complaints will appear here.</p>
+        <span class="material-symbols-outlined" aria-hidden="true">inbox</span>
+        <h4>No Complaints Yet</h4>
+        <p>Submitted complaints will appear here.</p>
       </div>
     `;
     return;
@@ -178,7 +202,10 @@ function renderComplaints() {
         <p class="complaint-description">${escapeHtml(item.description)}</p>
 
         <div class="complaint-meta">
-          <span class="complaint-date">${dateFormatted}</span>
+          <span class="complaint-date">
+            <span class="material-symbols-outlined" style="font-size: 14px; vertical-align: middle;">schedule</span>
+            ${dateFormatted}
+          </span>
         </div>
       </article>
     `;
@@ -211,8 +238,8 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
-// Toast Notifications
-function showToast(message, type = 'info', duration = 3000) {
+// Toast Notifications (Mobile Responsive)
+function showToast(message, type = 'info', duration = 3200) {
   if (!elements.toastContainer) return;
 
   const toast = document.createElement('div');
@@ -223,7 +250,7 @@ function showToast(message, type = 'info', duration = 3000) {
   if (type === 'error') icon = 'error';
 
   toast.innerHTML = `
-    <span class="material-symbols-outlined" style="font-size: 18px;">${icon}</span>
+    <span class="material-symbols-outlined" style="font-size: 20px;">${icon}</span>
     <span>${escapeHtml(message)}</span>
   `;
 
@@ -231,8 +258,8 @@ function showToast(message, type = 'info', duration = 3000) {
 
   setTimeout(() => {
     toast.style.opacity = '0';
-    toast.style.transform = 'translateY(10px)';
-    toast.style.transition = 'all 0.25s ease';
+    toast.style.transform = 'translateY(12px)';
+    toast.style.transition = 'all 0.25s cubic-bezier(0.4, 0, 0.2, 1)';
     setTimeout(() => toast.remove(), 250);
   }, duration);
 }
